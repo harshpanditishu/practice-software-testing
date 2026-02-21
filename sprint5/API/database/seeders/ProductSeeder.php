@@ -30,6 +30,7 @@ class ProductSeeder extends Seeder
             'Hammer' => 'D',             // Steel construction
             'Wrench' => 'D',             // Steel construction
             'Chisels' => 'D',            // Steel construction
+            'Automotive Tools' => 'D',   // Primarily steel mechanic tools
             'Saw' => 'D',                // Metal saw blades
             'Drill' => 'E',              // Power tools
             'Sander' => 'E',             // Power tools
@@ -635,6 +636,66 @@ class ProductSeeder extends Seeder
             'is_location_offer' => true,
             'is_rental' => false,
             'co2_rating' => 'C'
+        ], [
+            'id' => Str::ulid()->toBase32(),
+            'name' => 'Socket Wrench Set',
+            'description' => 'Comprehensive socket wrench set for automotive maintenance, including metric sockets and quick-release ratchet for daily garage use.',
+            'stock' => 25,
+            'price' => 54.99,
+            'brand_id' => DB::table('brands')->where('name', '=', 'ForgeFlex Tools')->first()->id,
+            'category_id' => DB::table('categories')->where('name', '=', 'Automotive Tools')->first()->id,
+            'product_image_id' => DB::table('product_images')->where('file_name', '=', 'wrench01.avif')->first()->id,
+            'is_location_offer' => false,
+            'is_rental' => false,
+            'co2_rating' => 'D'
+        ], [
+            'id' => Str::ulid()->toBase32(),
+            'name' => 'Torque Wrench 1/2 inch',
+            'description' => 'Click-type torque wrench designed for wheel lug nuts and engine work with precise torque settings and durable steel body.',
+            'stock' => 25,
+            'price' => 79.50,
+            'brand_id' => DB::table('brands')->where('name', '=', 'ForgeFlex Tools')->first()->id,
+            'category_id' => DB::table('categories')->where('name', '=', 'Automotive Tools')->first()->id,
+            'product_image_id' => DB::table('product_images')->where('file_name', '=', 'wrench02.avif')->first()->id,
+            'is_location_offer' => true,
+            'is_rental' => false,
+            'co2_rating' => 'D'
+        ], [
+            'id' => Str::ulid()->toBase32(),
+            'name' => 'Oil Filter Wrench',
+            'description' => 'Adjustable oil filter wrench for fast and secure oil filter removal during regular vehicle servicing.',
+            'stock' => 25,
+            'price' => 19.95,
+            'brand_id' => DB::table('brands')->where('name', '=', 'MightyCraft Hardware')->first()->id,
+            'category_id' => DB::table('categories')->where('name', '=', 'Automotive Tools')->first()->id,
+            'product_image_id' => DB::table('product_images')->where('file_name', '=', 'pliers01.avif')->first()->id,
+            'is_location_offer' => false,
+            'is_rental' => false,
+            'co2_rating' => 'D'
+        ], [
+            'id' => Str::ulid()->toBase32(),
+            'name' => 'Spark Plug Socket Set',
+            'description' => 'Thin-wall spark plug sockets with magnetic retention for safe plug installation and removal in tight engine bays.',
+            'stock' => 25,
+            'price' => 24.90,
+            'brand_id' => DB::table('brands')->where('name', '=', 'ForgeFlex Tools')->first()->id,
+            'category_id' => DB::table('categories')->where('name', '=', 'Automotive Tools')->first()->id,
+            'product_image_id' => DB::table('product_images')->where('file_name', '=', 'wrench03.avif')->first()->id,
+            'is_location_offer' => false,
+            'is_rental' => false,
+            'co2_rating' => 'D'
+        ], [
+            'id' => Str::ulid()->toBase32(),
+            'name' => 'OBD-II Diagnostic Scanner',
+            'description' => 'Portable OBD-II scanner for reading and clearing diagnostic trouble codes with live data support for most modern vehicles.',
+            'stock' => 25,
+            'price' => 64.40,
+            'brand_id' => DB::table('brands')->where('name', '=', 'MightyCraft Hardware')->first()->id,
+            'category_id' => DB::table('categories')->where('name', '=', 'Automotive Tools')->first()->id,
+            'product_image_id' => DB::table('product_images')->where('file_name', '=', 'screwdriver01.avif')->first()->id,
+            'is_location_offer' => true,
+            'is_rental' => false,
+            'co2_rating' => 'D'
         ], [
             'id' => Str::ulid()->toBase32(),
             'name' => 'Excavator',
