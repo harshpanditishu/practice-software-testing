@@ -36,7 +36,7 @@ jobs:
            # The --rm flag ensures that the container is removed after the tests complete, preventing leftover containers from consuming resources.
            # The -e flag sets the API_BASE_URL environment variable inside the container, allowing the tests to know which API endpoint to target.
            # Finally, the npm run test:api:smoke command is executed inside the container to run the smoke tests.
-      - name: Build smoke test image
+      - name: Build Smoke test image
         run: |
           
           docker build \
