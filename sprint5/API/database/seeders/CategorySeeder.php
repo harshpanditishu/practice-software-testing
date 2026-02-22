@@ -26,7 +26,13 @@ class CategorySeeder extends Seeder
             'id' => Str::ulid()->toBase32(),
             'parent_id' => null,
             'name' => 'Other',
-            'slug' => 'other']]);
+            'slug' => 'other'
+        ], [
+            'id' => Str::ulid()->toBase32(),
+            'parent_id' => null,
+            'name' => 'Automotive Tools',
+            'slug' => 'automotive-tools'
+        ]]);
 
         $handToolsId = DB::table('categories')->where('name', '=', 'Hand Tools')->first()->id;
         $powerToolsId = DB::table('categories')->where('name', '=', 'Power Tools')->first()->id;

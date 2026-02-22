@@ -1,0 +1,262 @@
+name: api-tests-docker-ci
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - main
+      - Release
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - closed
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: welcome-to-docker-api-tests
+  API_BASE_URL: https://api.practicesoftwaretesting.com
+
+jobs:
+  smoke-on-feature-push:
+    if: github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/Release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+        #explain the code below
+         # This step checks out the code from the repository so that it can be used in subsequent steps. It uses the actions/checkout@v4 action, which is a standard GitHub Action for checking out code. This allows the workflow to access the codebase and build the Docker image for running the smoke tests.
+         # The checkout action will clone the repository and make the code available in the runner's workspace, which is necessary for building the Docker image and running the tests against the API.
+        # By checking out the code, we ensure that the latest changes from the feature branch are included in the Docker image, allowing us to test the new code against the API and validate that it does not introduce any critical issues before merging into main or Release branches.
+        # This step builds a Docker image for running the smoke tests. It uses the Dockerfile.playwright-api file to create the image and tags it with the current commit SHA.
+           # The docker build command is used to create a Docker image based on the instructions defined in the Dockerfile.playwright-api file. The -f flag specifies the Dockerfile to use, and the -t flag tags the image with a name that includes the current commit SHA (github.sha) for versioning purposes.
+           # Building the Docker image allows us to create a consistent environment for running the smoke tests, ensuring that all dependencies and configurations are included as defined in the Dockerfile. This helps to avoid issues related to environment differences and ensures that the tests run reliably across different runs of the workflow.
+           # By tagging the image with the commit SHA, we can easily identify which version of the code is being tested, which is especially useful for debugging and tracking test results over time.
+            # This step runs the smoke tests inside the Docker container. It uses the docker run command to start a container from the image built in the previous step.
+           # The --rm flag ensures that the container is removed after the tests complete, preventing leftover containers from consuming resources.
+           # The -e flag sets the API_BASE_URL environment variable inside the container, allowing the tests to know which API endpoint to target.
+           # Finally, the npm run test:api:smoke command is executed inside the container to run the smoke tests.
+      - name: Build Smoke test image
+        run: |
+          
+          docker build \
+            -f Dockerfile.playwright-api \
+            -t api-tests:${{ github.sha }} \
+            .
+
+      - name: Prepare smoke report directory
+        run: |
+          mkdir -p artifacts/smoke
+
+      - name: Run smoke tests with reports inside container
+        run: |
+         
+          docker run --rm \
+            -e API_BASE_URL=${{ env.API_BASE_URL }} \
+            -e PLAYWRIGHT_HTML_OUTPUT_DIR=/artifacts/playwright-report \
+            -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=/artifacts/results.xml \
+            -v ${{ github.workspace }}/artifacts/smoke:/artifacts \
+            api-tests:${{ github.sha }} \
+            npx playwright test tests/api --grep @smoke --reporter=list,html,junit
+
+      - name: Publish smoke report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-report-feature-push
+          path: artifacts/smoke
+          retention-days: 14
+
+      - name: Add smoke report summary
+        if: always()
+        run: |
+          {
+            echo "## Smoke Test Report Artifact"
+            echo "- Artifact: playwright-smoke-report-feature-push"
+            echo ""
+            echo "Download the artifact from this workflow run to inspect HTML and JUnit reports."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  regression-on-pr-to-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        if: github.event_name == 'pull_request' && github.base_ref == 'Release'
+
+      - name: Build regression test image
+        if: github.event_name == 'pull_request' && github.base_ref == 'Release'
+        run: |
+          docker build \
+            -f Dockerfile.playwright-api \
+            -t api-tests:${{ github.sha }} \
+            .
+
+      - name: Prepare regression report directory
+        if: github.event_name == 'pull_request' && github.base_ref == 'Release'
+        run: |
+          mkdir -p artifacts/regression
+
+      - name: Run regression tests inside container
+        if: github.event_name == 'pull_request' && github.base_ref == 'Release'
+        run: |
+          docker run --rm \
+            -e API_BASE_URL=${{ env.API_BASE_URL }} \
+            -e PLAYWRIGHT_HTML_OUTPUT_DIR=/artifacts/playwright-report \
+            -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=/artifacts/results.xml \
+            -v ${{ github.workspace }}/artifacts/regression:/artifacts \
+            api-tests:${{ github.sha }} \
+            npx playwright test tests/api --grep @regression --reporter=list,html,junit
+
+      - name: Publish regression report artifact
+        if: always() && github.event_name == 'pull_request' && github.base_ref == 'Release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-regression-report-pr-to-release
+          path: artifacts/regression
+          retention-days: 14
+
+      - name: Add regression report summary
+        if: always() && github.event_name == 'pull_request' && github.base_ref == 'Release'
+        run: |
+          {
+            echo "## Regression Test Report Artifact"
+            echo "- Artifact: playwright-regression-report-pr-to-release"
+            echo ""
+            echo "Download the artifact from this workflow run to inspect HTML and JUnit reports."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Mark check as discoverable when not applicable
+        if: github.event_name != 'pull_request' || github.base_ref != 'Release'
+        run: |
+          echo "No-op: regression check only runs for PRs targeting Release."
+
+  smoke-and-regression-on-pr-release-to-main:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        if: github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'Release'
+
+      - name: Build test image for release-main validation
+        if: github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'Release'
+        run: |
+          docker build \
+            -f Dockerfile.playwright-api \
+            -t api-tests:${{ github.sha }} \
+            .
+
+      - name: Prepare smoke  report directory
+        if: github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'Release'
+        run: |
+          mkdir -p artifacts/smoke
+         
+
+      - name: Prepare regression report directory
+        if: github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'Release'
+        run: |
+          mkdir -p artifacts/regression
+
+      - name: Run smoke tests with reports
+        if: github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'Release'
+        run: |
+          docker run --rm \
+            -e API_BASE_URL=${{ env.API_BASE_URL }} \
+            -e PLAYWRIGHT_HTML_OUTPUT_DIR=/artifacts/playwright-report \
+            -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=/artifacts/results.xml \
+            -v ${{ github.workspace }}/artifacts/smoke:/artifacts \
+            api-tests:${{ github.sha }} \
+            npx playwright test tests/api --grep @smoke --reporter=list,html,junit
+
+      - name: Run regression tests with reports
+        if: github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'Release'
+        run: |
+          docker run --rm \
+            -e API_BASE_URL=${{ env.API_BASE_URL }} \
+            -e PLAYWRIGHT_HTML_OUTPUT_DIR=/artifacts/playwright-report \
+            -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=/artifacts/results.xml \
+            -v ${{ github.workspace }}/artifacts/regression:/artifacts \
+            api-tests:${{ github.sha }} \
+            npx playwright test tests/api --grep @regression --reporter=list,html,junit
+
+      - name: Publish smoke report artifact
+        if: always() && github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'Release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-report
+          path: artifacts/smoke
+          retention-days: 14
+
+      - name: Publish regression report artifact
+        if: always() && github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'Release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-regression-report
+          path: artifacts/regression
+          retention-days: 14
+
+      - name: Add smoke report summary
+        if: always() && github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'Release'
+        run: |
+          {
+            echo "## Test Report Artifacts"
+            echo "- Smoke: playwright-smoke-report"
+            echo "- Regression: playwright-regression-report"
+            echo ""
+            echo "Download artifacts from this workflow run to inspect HTML and JUnit reports."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Mark check as discoverable when not applicable
+        if: github.event_name != 'pull_request' || github.base_ref != 'main' || github.head_ref != 'Release'
+        run: |
+          echo "No-op: smoke+regression check only runs for PRs from Release to main."
+
+  push-image:
+    needs:
+      - smoke-and-regression-on-pr-release-to-main
+    if: github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'Release' && github.event.action == 'closed' && github.event.pull_request.merged == true && needs.smoke-and-regression-on-pr-release-to-main.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Docker Hub login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          #Explain the image name and tags below
+           # The images field specifies the name of the Docker image to be built and pushed. It uses the DOCKERHUB_USERNAME secret and the IMAGE_NAME environment variable to construct the full image name in the format of "username/imagename".
+           # The tags field defines how the image should be tagged when pushed to Docker Hub. In this case, it includes two tags: "latest" (a raw value) and a tag based on the commit SHA (type=sha). This allows for both a stable "latest" tag and a unique tag for each commit, making it easier to track which version of the code is associated with each image.
+           #what is the value of env.IMAGE_NAME and how is it set?
+           # The value of env.IMAGE_NAME is "welcome-to-docker-api-tests". It is set in the env section at the top of the workflow file, where environment variables are defined. This variable is used to specify the name of the Docker image that will be built and pushed to Docker Hub. By using an environment variable, it allows for easier maintenance and updates to the image name in the future, as it can be changed in one place without needing to modify multiple steps in the workflow.
+            # By using the DOCKERHUB_USERNAME secret and the IMAGE_NAME environment variable, we can ensure that the Docker image is correctly named and tagged when pushed to Docker Hub, allowing for better organization and versioning of the images.
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.playwright-api
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
