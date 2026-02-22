@@ -49,7 +49,7 @@ jobs:
       - name: Verify UI endpoint
         shell: pwsh
         run: |
-          $response = Invoke-WebRequest -Uri "http://localhost:4200" -UseBasicParsing
+          $response = Invoke-WebRequest -Uri "http://localhost:14200" -UseBasicParsing
           if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 400) {
             throw "UI check failed with status code $($response.StatusCode)"
           }
