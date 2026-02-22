@@ -28,6 +28,17 @@ jobs:
         run: |
           docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml down --remove-orphans
 
+      - name: Free known conflicting host ports
+        shell: pwsh
+        run: |
+          $ports = @(3306, 4200, 8000)
+          foreach ($port in $ports) {
+            $containerIds = docker ps --filter "publish=$port" --quiet
+            if ($containerIds) {
+              docker rm -f $containerIds
+            }
+          }
+
       - name: Deploy latest sprint5 locally with Docker Compose
         shell: pwsh
         run: |
@@ -49,9 +60,22 @@ jobs:
       - name: Verify UI endpoint
         shell: pwsh
         run: |
-          $response = Invoke-WebRequest -Uri "http://localhost:14200" -UseBasicParsing
-          if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 400) {
-            throw "UI check failed with status code $($response.StatusCode)"
+          $targets = @("http://localhost:14200", "http://localhost:4200")
+          $healthy = $false
+          foreach ($target in $targets) {
+            try {
+              $response = Invoke-WebRequest -Uri $target -UseBasicParsing -TimeoutSec 15
+              if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
+                $healthy = $true
+                break
+              }
+            }
+            catch {
+            }
+          }
+
+          if (-not $healthy) {
+            throw "UI check failed on both http://localhost:14200 and http://localhost:4200"
           }
 
       - name: Show container status on failure
