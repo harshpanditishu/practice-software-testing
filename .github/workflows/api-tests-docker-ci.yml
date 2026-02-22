@@ -8,6 +8,11 @@ on:
     branches:
       - main
       - Release
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - closed
   workflow_dispatch:
 
 env:
@@ -216,7 +221,9 @@ jobs:
           echo "No-op: smoke+regression check only runs for PRs from Release to main."
 
   push-image:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - smoke-and-regression-on-pr-release-to-main
+    if: github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'Release' && github.event.action == 'closed' && github.event.pull_request.merged == true && needs.smoke-and-regression-on-pr-release-to-main.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
