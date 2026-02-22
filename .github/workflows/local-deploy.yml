@@ -68,21 +68,34 @@ jobs:
         shell: pwsh
         run: |
           $targets = @("http://localhost:14200", "http://localhost:4200")
+          $maxAttempts = 30
+          $sleepSeconds = 10
           $healthy = $false
-          foreach ($target in $targets) {
-            try {
-              $response = Invoke-WebRequest -Uri $target -UseBasicParsing -TimeoutSec 15
-              if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
-                $healthy = $true
-                break
+
+          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            foreach ($target in $targets) {
+              try {
+                $response = Invoke-WebRequest -Uri $target -UseBasicParsing -TimeoutSec 15
+                if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
+                  Write-Host "UI is healthy on $target (attempt $attempt/$maxAttempts)."
+                  $healthy = $true
+                  break
+                }
+              }
+              catch {
               }
             }
-            catch {
+
+            if ($healthy) {
+              break
             }
+
+            Write-Host "UI not ready yet (attempt $attempt/$maxAttempts). Waiting $sleepSeconds seconds..."
+            Start-Sleep -Seconds $sleepSeconds
           }
 
           if (-not $healthy) {
-            throw "UI check failed on both http://localhost:14200 and http://localhost:4200"
+            throw "UI check failed after $maxAttempts attempts on http://localhost:14200 and http://localhost:4200"
           }
 
       - name: Show container status on failure
