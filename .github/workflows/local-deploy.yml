@@ -44,6 +44,11 @@ jobs:
         run: |
           docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml up -d --build --remove-orphans
 
+      - name: Install API dependencies
+        shell: pwsh
+        run: |
+          docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml exec -T -u root laravel-api composer install --no-dev --optimize-autoloader --ignore-platform-req=ext-ffi
+
       - name: Run migrations and seed data
         shell: pwsh
         run: |
