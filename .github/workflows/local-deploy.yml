@@ -17,20 +17,26 @@ jobs:
     env:
       SPRINT: sprint5
       DISABLE_LOGGING: "true"
+      COMPOSE_PROJECT_NAME: localdeploy
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Stop previous localdeploy stack (if any)
+        shell: pwsh
+        run: |
+          docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml down --remove-orphans
+
       - name: Deploy latest sprint5 locally with Docker Compose
         shell: pwsh
         run: |
-          docker compose up -d --build --remove-orphans
+          docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml up -d --build --remove-orphans
 
       - name: Run migrations and seed data
         shell: pwsh
         run: |
-          docker compose exec -T laravel-api php artisan migrate:fresh --seed
+          docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml exec -T laravel-api php artisan migrate:fresh --seed
 
       - name: Verify API health endpoint
         shell: pwsh
@@ -52,5 +58,5 @@ jobs:
         if: failure()
         shell: pwsh
         run: |
-          docker compose ps
-          docker compose logs --tail=200
+          docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml ps
+          docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml logs --tail=200
