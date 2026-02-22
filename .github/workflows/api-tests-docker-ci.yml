@@ -94,7 +94,7 @@ jobs:
             -t api-tests:${{ github.sha }} \
             .
 
-      - name: Prepare smoke report directory
+      - name: Prepare regression report directory
         if: github.event_name == 'pull_request' && github.base_ref == 'Release'
         run: |
           mkdir -p artifacts/regression
@@ -110,7 +110,7 @@ jobs:
             api-tests:${{ github.sha }} \
             npx playwright test tests/api --grep @regression --reporter=list,html,junit
 
-      - name: Publish smoke report artifact
+      - name: Publish regression report artifact
         if: always() && github.event_name == 'pull_request' && github.base_ref == 'Release'
         uses: actions/upload-artifact@v4
         with:
@@ -118,7 +118,7 @@ jobs:
           path: artifacts/regression
           retention-days: 14
 
-      - name: Add smoke report summary
+      - name: Add regression report summary
         if: always() && github.event_name == 'pull_request' && github.base_ref == 'Release'
         run: |
           {
@@ -150,10 +150,11 @@ jobs:
             -t api-tests:${{ github.sha }} \
             .
 
-      - name: Prepare smoke report directory
+      - name: Prepare smoke  report directory
         if: github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'Release'
         run: |
           mkdir -p artifacts/smoke
+         
 
       - name: Prepare regression report directory
         if: github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'Release'
