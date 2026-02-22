@@ -2,3 +2,8 @@ services:
   mariadb:
     ports:
       - "13306:3306"
+
+  web:
+    ports:
+      - "8091:80"
+      - "18000:81"
