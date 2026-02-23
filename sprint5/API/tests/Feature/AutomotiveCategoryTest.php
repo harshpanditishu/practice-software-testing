@@ -22,7 +22,7 @@ test('retrieve automotive categories tree endpoint', function () {
         'parent_id' => $rootCategory->id,
     ]);
 
-    $response = $this->getJson('/automotive-categories/tree');
+    $response = $this->getJson('/categories/tree?by_category_slug=automotive-tools');
 
     $response
         ->assertStatus(ResponseAlias::HTTP_OK)
@@ -71,7 +71,7 @@ test('retrieve automotive category products endpoint', function () {
         'is_rental' => false,
     ]);
 
-    $response = $this->getJson('/automotive-categories/products');
+    $response = $this->getJson('/products?by_category_slug=automotive-tools');
 
     $response
         ->assertStatus(ResponseAlias::HTTP_OK)

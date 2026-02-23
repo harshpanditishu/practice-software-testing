@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\BrandController;
-use App\Http\Controllers\AutomotiveCategoryController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\ContactController;
@@ -72,12 +71,6 @@ Route::controller(CategoryController::class)->prefix('categories')->group(functi
     Route::patch('/{id}', 'patch');
     Route::put('/{id}', 'update');
     Route::delete('/{id}', 'destroy');
-});
-
-Route::controller(AutomotiveCategoryController::class)->prefix('automotive-categories')->group(function () {
-    Route::get('', 'index');
-    Route::get('/tree', 'index');
-    Route::get('/products', 'products');
 });
 
 Route::controller(ContactController::class)->prefix('messages')->group(function () {
