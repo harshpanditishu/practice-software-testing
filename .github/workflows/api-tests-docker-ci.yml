@@ -21,11 +21,22 @@ env:
 
 jobs:
   smoke-on-feature-push:
-    if: github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/Release'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    #explain what is refs/heads/main and refs/heads/Release
+     # refs/heads/main and refs/heads/Release are Git references that point to the main and Release branches in the repository, respectively. In this workflow, the smoke-on-feature-push job is configured to run only when a push event occurs on branches that do not match these references. This means that the smoke tests will be triggered for feature branches or any other branches that are not main or Release, allowing for early validation of changes before they are merged into the main codebase. 
+     #By excluding pushes to main and Release branches, we can focus on testing new features and changes in isolation without running smoke tests on stable branches where critical issues should already have been addressed.  
+    #what does refs/heads/main and refs/heads/Release mean in terms of GitHub events?
+     # In terms of GitHub events, refs/heads/main and refs/heads/Release refer to the specific branches that are being monitored for push events. When a push event occurs, GitHub checks the reference of the branch that was pushed to. If the reference matches refs/heads/main or refs/heads/Release, the smoke-on-feature-push job will not run. This allows the workflow to target only feature branches or other non-main branches for running smoke tests, ensuring that critical tests are not executed on stable branches where they may not be necessary.
+     # This is a common practice in CI/CD workflows to optimize testing and focus on validating new changes in feature branches before they are merged into the main codebase, where they can potentially impact production stability.
+     # By using these Git references, we can control the execution of the smoke tests and ensure that they are run at the appropriate stages of the development process, providing early feedback on the quality of new code changes while maintaining the integrity of the main and Release branches.
+     # In summary, refs/heads/main and refs/heads/Release are used to specify which branches should be excluded from triggering the smoke-on-feature-push job, allowing for targeted testing of feature branches and preventing unnecessary test runs on stable branches.
+     # The smoke-on-feature-push job will only run for push events that occur on branches that do not match refs/heads/main and refs/heads/Release, ensuring that smoke tests are executed for feature branches while excluding stable branches from unnecessary test runs.
+     # This allows for early validation of changes in feature branches without impacting the main and Release branches, where critical issues should already have been addressed. By controlling the execution of smoke tests based on Git references, we can optimize our CI/CD workflow and focus on testing new features effectively while maintaining the stability of our main codebase.
+     # In terms of GitHub events, refs/heads/main and refs/heads/Release refer to the specific branches that are being monitored for push events. When a push event occurs, GitHub checks the reference of the branch that was pushed to. If the reference matches refs/heads/main or refs/heads/Release, the smoke-on-feature-push job will not run. This allows the workflow to target only feature branches or other non-main branches for running smoke tests, ensuring that critical tests are not executed on stable branches where they may not be necessary.
+     if: github.event_name == 'push' && github.ref != 'refs/heads/main' && github.ref != 'refs/heads/Release'
+     runs-on: ubuntu-latest
+     timeout-minutes: 15
 
-    steps:
+     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -258,5 +269,67 @@ jobs:
           context: .
           file: ./Dockerfile.playwright-api
           push: true
+          #whats does the tags and labels below do in the context of building and pushing a Docker image?
+           # The tags field specifies the tags that will be applied to the Docker image when it is pushed to the registry. In this case, it includes a "latest" tag (a raw value) and a tag based on the commit SHA (type=sha). This allows for both a stable "latest" tag and a unique tag for each commit, making it easier to track which version of the code is associated with each image.
+           # The labels field allows you to add metadata to the Docker image in the form of key-value pairs. This can include information such as the version, description, or any other relevant details about the image. In this workflow, it uses the outputs from the docker/metadata-action to automatically generate labels based on the GitHub repository and commit information. This metadata can be useful for organizing and managing Docker images in the registry, as well as providing additional context when inspecting images later on.
+           # By using both tags and labels, we can ensure that our Docker images are well-organized, easily identifiable, and contain relevant metadata that can assist with tracking and managing different versions of our application in the Docker registry.
+           # In summary, the tags field defines how the image will be tagged when pushed to Docker Hub, while the labels field allows for adding metadata to the image for better organization and management in the registry.
+           #what is steps.meta.outputs.tags and steps.meta.outputs.labels?
+            # steps.meta.outputs.tags and steps.meta.outputs.labels refer to the outputs generated by the docker/metadata-action step with the id "meta". This action extracts metadata from the GitHub repository and commit information to create tags and labels for the Docker image. The tags output will contain the tags that should be applied to the image (such as "latest" and the commit SHA), while the labels output will contain key-value pairs of metadata that can be added as labels to the Docker image. By referencing these outputs in the build-and-push step, we can ensure that the correct tags and labels are applied to the Docker image when it is built and pushed to Docker Hub.
+
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+          #Need a job to execute Playwright UI tests when PR is merged to main, 
+          #but want to keep it separate from the smoke/regression API tests since UI tests are more resource intensive and have different failure characteristics. 
+         # This job will build and push the Docker image after successful smoke/regression tests, and then we can have a separate workflow that triggers on new image push to run the Playwright UI tests against that image. 
+          #This separation allows us to optimize our CI/CD pipeline by only running the UI tests when we have a new image that has passed API tests, ensuring that we are testing stable versions of the application in the UI tests while still validating new changes with smoke/regression tests in a timely manner.
+  execute-ui-tests-on-new-image:
+    needs:
+      - push-image
+      #explain what is being checked in the if condition below
+       # The if condition checks that the workflow is triggered by a push event and that the reference of the push event starts with 'refs/tags/'. This means that this job will only run when a new tag is pushed to the repository, which typically indicates a new release or version of the application. By checking for tags, we can ensure that the Playwright UI tests are only executed against stable versions of the application that have been officially released, rather than running UI tests on every commit or pull request, which can be more resource intensive and may not always be necessary.
+       # This allows us to optimize our CI/CD pipeline by only running the UI tests when we have a new image that has passed API tests and has been tagged for release, ensuring that we are testing stable versions of the application in the UI tests while still validating new changes with smoke/regression tests in a timely manner.
+       #what does refs/tags/ mean in terms of GitHub events?
+        # In terms of GitHub events, refs/tags/ refers to the reference for tags in the Git repository. 
+        #When a push event occurs, GitHub checks the reference of the push to determine if it is a tag. If the reference starts with refs/tags/, it indicates that a new tag has been pushed to the repository. This is often used to signify a new release or version of the application. By checking for this reference in the if condition, we can ensure that certain jobs or actions are only executed when a new tag is created, allowing us to target specific workflows for release events while excluding regular commits or pull requests from triggering those workflows. 
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      #which git repo is being checked out in the step below and why?
+       # The step below checks out the code from the repository where this workflow is defined. 
+       # It uses the actions/checkout@v4 action, which is a standard GitHub Action for checking out code. This allows the workflow to access the codebase and run the Playwright UI tests against the new Docker image that was built and pushed in the previous steps. By checking out the code, we can ensure that we have access to the test scripts and any necessary configuration files needed to execute the UI tests against the new image. This is essential for validating that the new image works correctly with the UI tests before it is used in production or further testing environments.
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Playwright UI tests against new image
+        run: |
+
+
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+
+          #is installing playwright and browsers necessary to run the UI tests in the context of this workflow?
+           # Yes, installing Playwright and the necessary browsers is necessary to run the UI tests in the context of this workflow. Playwright is a testing framework that allows you to automate browser interactions for testing web applications. In order to execute the UI tests, we need to have Playwright installed along with the browsers that it supports (such as Chromium, Firefox, and WebKit). This setup ensures that we can run the UI tests against the new Docker image effectively, allowing us to validate that the user interface of the application works correctly with the latest changes before it is deployed to production or further testing environments. By including these installation steps in the workflow, we can ensure that all dependencies are in place for successful execution of the Playwright UI tests.
+          #what does -g and --with-deps do in the npm install command for Playwright?
+           # The -g flag in the npm install command stands for "global" and it tells npm to install the Playwright package globally on the system, making it available for use in any directory without needing to specify a local path. This is useful for command-line tools like Playwright that you want to be able to run from anywhere.
+           # The --with-deps flag in the npx playwright install command tells Playwright to install all necessary browser dependencies for the supported browsers. This ensures that the browsers can run correctly in the environment where the tests are executed. By including this flag, we can avoid issues related to missing dependencies that could cause the UI tests to fail when trying to launch the browsers. This is especially important in CI/CD environments where the testing environment may not have all the required dependencies pre-installed, ensuring that the Playwright tests can run smoothly without manual intervention to set up the environment.
+           #which playwright.config.ts configuration will be used when running the Playwright tests in this step?
+            # The Playwright tests will use the playwright.config.ts configuration file that is present in the repository that is being checked out in the previous step. When the code is checked out, it includes all the files in the repository, including the playwright.config.ts file. This configuration file contains settings and options for how Playwright should run the tests, such as which browsers to use, test timeouts, and other configurations. By checking out the code from the repository, we ensure that we have access to this configuration file, allowing us to run the Playwright UI tests with the specified settings defined in playwright.config.ts. This ensures that the tests are executed consistently according to the configurations set by the development team.
+            # In summary, the Playwright UI tests will use the playwright.config.ts file from the checked-out repository, and installing Playwright with the necessary dependencies is essential for running the UI tests successfully in this workflow.
+           npm install -g playwright
+          npx playwright install --with-deps
+
+
+          # Example command to run UI tests, this would need to be replaced with the actual test execution command
+
+          npx playwright test tests/ui --reporter=list,html,junit
+
+          #code to publish UI test reports as artifacts and add summary can be added here similar to the smoke/regression test steps above, depending on how the test results are generated and stored in the workflow.
+      - name: Publish UI test report artifact
+        if: always() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-ui-test-report
+          path: playwright-report/
