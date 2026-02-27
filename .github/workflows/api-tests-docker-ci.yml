@@ -186,7 +186,7 @@ jobs:
             -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=/artifacts/results.xml \
             -v ${{ github.workspace }}/artifacts/smoke:/artifacts \
             api-tests:${{ github.sha }} \
-            npx playwright test tests/api --grep @smoke --reporter=list,html,junit
+            npx playwright test tests/api --project=api --grep @smoke --reporter=list,html,junit
 
       - name: Run regression tests with reports
         if: github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'Release'
@@ -197,7 +197,7 @@ jobs:
             -e PLAYWRIGHT_JUNIT_OUTPUT_NAME=/artifacts/results.xml \
             -v ${{ github.workspace }}/artifacts/regression:/artifacts \
             api-tests:${{ github.sha }} \
-            npx playwright test tests/api --grep @regression --reporter=list,html,junit
+            npx playwright test tests/api --project=api --grep @regression --reporter=list,html,junit
 
       - name: Publish smoke report artifact
         if: always() && github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref == 'Release'
