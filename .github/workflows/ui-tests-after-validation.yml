@@ -7,52 +7,26 @@ on:
       - local-deploy
     types:
       - completed
-    branches:
-      - main
-      - Release
-  workflow_dispatch:
 
 concurrency:
   group: ui-tests-after-validation
   cancel-in-progress: true
 
 jobs:
-  validate-preconditions:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+  gate:
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     outputs:
-      target_sha: ${{ steps.branch_sync.outputs.main_sha }}
+      should_run: ${{ steps.check.outputs.should_run }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Ensure main and Release are in sync
-        id: branch_sync
-        shell: bash
-        run: |
-          git fetch origin main Release
-
-          MAIN_SHA="$(git rev-parse origin/main)"
-          RELEASE_SHA="$(git rev-parse origin/Release)"
-
-          echo "main_sha=$MAIN_SHA" >> "$GITHUB_OUTPUT"
-          echo "release_sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
-
-          if [[ "$MAIN_SHA" != "$RELEASE_SHA" ]]; then
-            echo "main ($MAIN_SHA) and Release ($RELEASE_SHA) are not on the same commit."
-            exit 1
-          fi
-
-      - name: Ensure both prerequisite workflows succeeded on target SHA
+      - name: Check required workflow/job successes
+        id: check
         uses: actions/github-script@v7
         env:
-          TARGET_SHA: ${{ steps.branch_sync.outputs.main_sha }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
         with:
           script: |
-            const requiredWorkflowNames = ['api-tests-docker-ci', 'local-deploy'];
             const targetSha = process.env.TARGET_SHA;
 
             const workflows = await github.paginate(github.rest.actions.listRepoWorkflows, {
@@ -61,34 +35,62 @@ jobs:
               per_page: 100,
             });
 
-            const workflowsByName = new Map(workflows.map((workflow) => [workflow.name, workflow]));
+            const workflowByName = new Map(workflows.map((w) => [w.name, w]));
+            const localDeploy = workflowByName.get('local-deploy');
+            const apiTests = workflowByName.get('api-tests-docker-ci');
 
-            for (const workflowName of requiredWorkflowNames) {
-              const workflow = workflowsByName.get(workflowName);
-              if (!workflow) {
-                core.setFailed(`Workflow '${workflowName}' not found.`);
-                return;
-              }
-
-              const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: workflow.id,
-                status: 'completed',
-                per_page: 100,
-              });
-
-              const matchingSuccessRun = runs.find((run) => run.head_sha === targetSha && run.conclusion === 'success');
-
-              if (!matchingSuccessRun) {
-                core.setFailed(`No successful '${workflowName}' run found for commit ${targetSha}.`);
-                return;
-              }
+            if (!localDeploy || !apiTests) {
+              core.setOutput('should_run', 'false');
+              return;
             }
+
+            const localDeployRuns = await github.paginate(github.rest.actions.listWorkflowRuns, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: localDeploy.id,
+              status: 'completed',
+              per_page: 50,
+            });
+
+            const localDeploySuccess = localDeployRuns.find((run) => run.head_sha === targetSha && run.conclusion === 'success');
+            if (!localDeploySuccess) {
+              core.setOutput('should_run', 'false');
+              return;
+            }
+
+            const apiRuns = await github.paginate(github.rest.actions.listWorkflowRuns, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: apiTests.id,
+              status: 'completed',
+              per_page: 50,
+            });
+
+            const apiSuccessRun = apiRuns.find((run) => run.head_sha === targetSha && run.conclusion === 'success');
+            if (!apiSuccessRun) {
+              core.setOutput('should_run', 'false');
+              return;
+            }
+
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: apiSuccessRun.id,
+              per_page: 100,
+            });
+
+            const requiredJobs = ['smoke-and-regression-on-pr-release-to-main', 'push-image'];
+            const allRequiredSucceeded = requiredJobs.every((name) => {
+              const job = jobs.find((j) => j.name === name);
+              return job && job.conclusion === 'success';
+            });
+
+            core.setOutput('should_run', allRequiredSucceeded ? 'true' : 'false');
 
   run-ui-tests:
     needs:
-      - validate-preconditions
+      - gate
+    if: needs.gate.outputs.should_run == 'true'
     runs-on:
       - self-hosted
     timeout-minutes: 45
