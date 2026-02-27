@@ -10,5 +10,7 @@ COPY practice-software-testing-framework/tests ./tests
 RUN npm ci --include=dev
 
 ENV CI=true
+#what does the CMD do? It runs the playwright tests in the api project and uses the list reporter to display the results in a concise format.
+
 
 CMD ["npx", "playwright", "test", "tests/api", "--project=api", "--reporter=list"]
