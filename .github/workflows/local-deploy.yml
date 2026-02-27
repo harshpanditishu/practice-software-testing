@@ -46,6 +46,8 @@ jobs:
 
       - name: Install API dependencies
         shell: pwsh
+        env:
+          COMPOSER_ALLOW_SUPERUSER: 1
         run: |
           docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml exec -T -u root laravel-api sh -lc "rm -rf /var/www/vendor /var/www/bootstrap/cache/*.php"
           docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml exec -T -u root laravel-api composer clear-cache
@@ -53,6 +55,7 @@ jobs:
 
       - name: Run migrations and seed data
         shell: pwsh
+
         run: |
           docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml exec -T laravel-api php artisan migrate:fresh --seed
 
