@@ -17,20 +17,44 @@ jobs:
     env:
       SPRINT: sprint5
       DISABLE_LOGGING: "true"
+      COMPOSE_PROJECT_NAME: localdeploy
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Stop previous localdeploy stack (if any)
+        shell: pwsh
+        run: |
+          docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml down --remove-orphans
+
+      - name: Free known conflicting host ports
+        shell: pwsh
+        run: |
+          $ports = @(3306, 4200, 8000)
+          foreach ($port in $ports) {
+            $containerIds = docker ps --filter "publish=$port" --quiet
+            if ($containerIds) {
+              docker rm -f $containerIds
+            }
+          }
+
       - name: Deploy latest sprint5 locally with Docker Compose
         shell: pwsh
         run: |
-          docker compose up -d --build --remove-orphans
+          docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml up -d --build --remove-orphans
+
+      - name: Install API dependencies
+        shell: pwsh
+        run: |
+          docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml exec -T -u root laravel-api sh -lc "rm -rf /var/www/vendor /var/www/bootstrap/cache/*.php"
+          docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml exec -T -u root laravel-api composer clear-cache
+          docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml exec -T -u root laravel-api composer install --prefer-dist --no-interaction --no-dev --no-plugins --no-scripts --optimize-autoloader --ignore-platform-req=ext-ffi
 
       - name: Run migrations and seed data
         shell: pwsh
         run: |
-          docker compose exec -T laravel-api php artisan migrate:fresh --seed
+          docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml exec -T laravel-api php artisan migrate:fresh --seed
 
       - name: Verify API health endpoint
         shell: pwsh
@@ -43,14 +67,40 @@ jobs:
       - name: Verify UI endpoint
         shell: pwsh
         run: |
-          $response = Invoke-WebRequest -Uri "http://localhost:4200" -UseBasicParsing
-          if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 400) {
-            throw "UI check failed with status code $($response.StatusCode)"
+          $targets = @("http://localhost:14200", "http://localhost:4200")
+          $maxAttempts = 30
+          $sleepSeconds = 10
+          $healthy = $false
+
+          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            foreach ($target in $targets) {
+              try {
+                $response = Invoke-WebRequest -Uri $target -UseBasicParsing -TimeoutSec 15
+                if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
+                  Write-Host "UI is healthy on $target (attempt $attempt/$maxAttempts)."
+                  $healthy = $true
+                  break
+                }
+              }
+              catch {
+              }
+            }
+
+            if ($healthy) {
+              break
+            }
+
+            Write-Host "UI not ready yet (attempt $attempt/$maxAttempts). Waiting $sleepSeconds seconds..."
+            Start-Sleep -Seconds $sleepSeconds
+          }
+
+          if (-not $healthy) {
+            throw "UI check failed after $maxAttempts attempts on http://localhost:14200 and http://localhost:4200"
           }
 
       - name: Show container status on failure
         if: failure()
         shell: pwsh
         run: |
-          docker compose ps
-          docker compose logs --tail=200
+          docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml ps
+          docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml logs --tail=200
