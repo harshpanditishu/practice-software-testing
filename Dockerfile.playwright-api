@@ -2,12 +2,13 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-COPY package*.json ./
-COPY tsconfig.json playwright.config.ts ./
-COPY tests ./tests
+COPY practice-software-testing-framework/package*.json ./
+COPY practice-software-testing-framework/tsconfig.json ./
+COPY practice-software-testing-framework/playwright.config.ts ./
+COPY practice-software-testing-framework/tests ./tests
 
 RUN npm ci --include=dev
 
 ENV CI=true
 
-CMD ["npx", "playwright", "test", "tests/api", "--reporter=list"]
+CMD ["npx", "playwright", "test", "tests/api", "--project=api", "--reporter=list"]

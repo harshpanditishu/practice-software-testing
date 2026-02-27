@@ -1,0 +1,12 @@
+services:
+  mariadb:
+    ports:
+      - "13306:3306"
+
+  angular-ui:
+    ports:
+      - "14200:4200"
+
+  web:
+    ports:
+      - "8091:80"
