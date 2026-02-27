@@ -1,0 +1,177 @@
+name: ui-tests-after-validation
+
+on:
+  workflow_run:
+    workflows:
+      - api-tests-docker-ci
+      - local-deploy
+    types:
+      - completed
+    branches:
+      - main
+      - Release
+  workflow_dispatch:
+
+concurrency:
+  group: ui-tests-after-validation
+  cancel-in-progress: true
+
+jobs:
+  validate-preconditions:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      target_sha: ${{ steps.branch_sync.outputs.main_sha }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure main and Release are in sync
+        id: branch_sync
+        shell: bash
+        run: |
+          git fetch origin main Release
+
+          MAIN_SHA="$(git rev-parse origin/main)"
+          RELEASE_SHA="$(git rev-parse origin/Release)"
+
+          echo "main_sha=$MAIN_SHA" >> "$GITHUB_OUTPUT"
+          echo "release_sha=$RELEASE_SHA" >> "$GITHUB_OUTPUT"
+
+          if [[ "$MAIN_SHA" != "$RELEASE_SHA" ]]; then
+            echo "main ($MAIN_SHA) and Release ($RELEASE_SHA) are not on the same commit."
+            exit 1
+          fi
+
+      - name: Ensure both prerequisite workflows succeeded on target SHA
+        uses: actions/github-script@v7
+        env:
+          TARGET_SHA: ${{ steps.branch_sync.outputs.main_sha }}
+        with:
+          script: |
+            const requiredWorkflowNames = ['api-tests-docker-ci', 'local-deploy'];
+            const targetSha = process.env.TARGET_SHA;
+
+            const workflows = await github.paginate(github.rest.actions.listRepoWorkflows, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+
+            const workflowsByName = new Map(workflows.map((workflow) => [workflow.name, workflow]));
+
+            for (const workflowName of requiredWorkflowNames) {
+              const workflow = workflowsByName.get(workflowName);
+              if (!workflow) {
+                core.setFailed(`Workflow '${workflowName}' not found.`);
+                return;
+              }
+
+              const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: workflow.id,
+                status: 'completed',
+                per_page: 100,
+              });
+
+              const matchingSuccessRun = runs.find((run) => run.head_sha === targetSha && run.conclusion === 'success');
+
+              if (!matchingSuccessRun) {
+                core.setFailed(`No successful '${workflowName}' run found for commit ${targetSha}.`);
+                return;
+              }
+            }
+
+  run-ui-tests:
+    needs:
+      - validate-preconditions
+    runs-on:
+      - self-hosted
+    timeout-minutes: 45
+    env:
+      SPRINT: sprint5
+      DISABLE_LOGGING: "true"
+      COMPOSE_PROJECT_NAME: uiaftervalidation
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Stop previous stack (if any)
+        shell: pwsh
+        run: |
+          docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml down --remove-orphans
+
+      - name: Deploy local environment
+        shell: pwsh
+        run: |
+          docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml up -d --build --remove-orphans
+
+      - name: Wait for API and UI endpoints
+        shell: pwsh
+        run: |
+          $apiReady = $false
+          $uiReady = $false
+
+          for ($attempt = 1; $attempt -le 30; $attempt++) {
+            try {
+              $api = Invoke-WebRequest -Uri "http://localhost:8091/status" -UseBasicParsing -TimeoutSec 10
+              if ($api.StatusCode -eq 200) { $apiReady = $true }
+            } catch {}
+
+            try {
+              $ui = Invoke-WebRequest -Uri "http://localhost:4200" -UseBasicParsing -TimeoutSec 10
+              if ($ui.StatusCode -ge 200 -and $ui.StatusCode -lt 400) { $uiReady = $true }
+            } catch {}
+
+            if ($apiReady -and $uiReady) { break }
+            Start-Sleep -Seconds 10
+          }
+
+          if (-not $apiReady) { throw "API did not become healthy on http://localhost:8091/status" }
+          if (-not $uiReady) { throw "UI did not become healthy on http://localhost:4200" }
+
+      - name: Install Playwright UI test dependencies
+        shell: pwsh
+        run: |
+          Set-Location "practice-software-testing-framework"
+          npm ci
+          npx playwright install
+
+      - name: Run Playwright UI tests
+        shell: pwsh
+        run: |
+          $artifactDir = "$env:GITHUB_WORKSPACE/artifacts/ui"
+          New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
+
+          Set-Location "practice-software-testing-framework"
+
+          $env:LOCAL_UI_BASE_URL = "http://localhost:4200"
+          $env:PLAYWRIGHT_HTML_OUTPUT_DIR = "$artifactDir/playwright-report"
+          $env:PLAYWRIGHT_JUNIT_OUTPUT_NAME = "$artifactDir/results.xml"
+
+          npx playwright test tests/ui --project=ui-local --reporter=list,html,junit
+
+      - name: Publish UI test artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-ui-after-validation-report
+          path: artifacts/ui
+          retention-days: 14
+
+      - name: Show diagnostics on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml ps
+          docker compose -p $env:COMPOSE_PROJECT_NAME -f docker-compose.yml -f .github/docker-compose.local-deploy.yml logs --tail=200
